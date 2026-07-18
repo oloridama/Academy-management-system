@@ -2,13 +2,8 @@
 from app.models.attendance import Attendance
 from app.repositories.student_repository import StudentRepository
 from app.repositories.instructor_repository import InstructorRepository
-from dataclasses import dataclass
+from app.models.date import Date
 
-@dataclass
-class Date:
-    year: str = ""
-    month: str = ""
-    day: int = 00
 
 # months is a constant with the names of the months as keys to access their number of days
 MONTHS = {

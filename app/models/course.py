@@ -7,6 +7,4 @@ class Course:
     this models a course in the institution
     """
     name: str
-    field: dict[str, list] # e.g science or art or social sciences
-    duration: str # short course or full academic calender
-    compulsory: bool # this is whether all students will take the course or not
+    topics: list[str] # this is a list of topics that will be covered in the course

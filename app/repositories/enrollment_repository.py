@@ -2,6 +2,9 @@
 from app.models.enrollment import Enrollment
 from student_repository import StudentRepository
 
+
+# This script 
+
 class EnrollmentRepository:
     """
     Enroll the student into the academy by creating the student object
@@ -28,3 +31,4 @@ class EnrollmentRepository:
         self.enroll.phone = student.phone
         self.enroll.transfer = True if transfer == "yes" else False
         self.enroll.guardian = guardian
+     
