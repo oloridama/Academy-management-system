@@ -1,150 +1,130 @@
-# This script is for defining functions for the student data model
-from app.models.student import Student
+"""Student data access layer."""
 import random
+from app.models.student import Student
 
 
 class StudentRepository:
-    def __init__(self, student: type[Student]):
-        self.student = student
-        self.students = []
-        # the purpose of this is to map an id 
-        # created by student id generator to a student name 
-        # thereby preventing the creation of duplicate ids for multiple students
-        self.students_id = {}   
+    """Manages CRUD operations for Student entities."""
 
-# Add student
+    # ── REFACTORING NOTES ──────────────────────────────────────────────
+    # 1. REMOVED `student: type[Student]` parameter — the original took
+    #    a class reference and mutated it as a singleton template. This
+    #    caused all students to overwrite the same object. Now we store
+    #    a list of independent Student instances.
+    #
+    # 2. CHANGED `self.students_id` (dict) → `self._used_ids` (set) —
+    #    a set is the right data structure for "already-used" tracking;
+    #    O(1) lookup with no unused values.
+    #
+    # 3. `add_student` now returns a Student dataclass instance instead
+    #    of a plain dict — consistent typing throughout the codebase.
+    #
+    # 4. FIXED `find_student` — the original tried to read
+    #    `self.students_id[id]` where `id` was never assigned, causing
+    #    NameError. Now uses proper iteration over Student objects.
+    #
+    # 5. FIXED `update_student` — the original had `return student`
+    #    INSIDE the for-loop, so it always returned after the first
+    #    iteration (even if no match).
+    #
+    # 6. FIXED `deactivate_student` — the original used attribute access
+    #    (`student.last_name`) on dict items. Now uses Student dataclass
+    #    attributes consistently.
+    # ───────────────────────────────────────────────────────────────────
+
+    def __init__(self):
+        self.students: list[Student] = []
+        self._used_ids: set[str] = set()
+
     def add_student(
-            self,
-            firstname,
-            lastname,
-            gender,
-            dob,
-            email,
-            phone,
-            background,
-            passport,
-            emergency,
-        ) -> Student:
-        """
-        This creates a student profile,
-        add the profile to student list
-        and return the student class object
-        """
-        # create student id for new student
-        student_id = self.generate_new_id()
-        # map the student id to the student name
-        self.students_id[student_id] = firstname + " " + lastname        
+        self,
+        firstname: str,
+        lastname: str,
+        gender: str,
+        dob: str,
+        email: str,
+        phone: str,
+        background: str,
+        passport: str = "",
+        emergency: str = "",
+    ) -> Student:
+        """Create a new student profile and add it to the repository."""
+        student_id = self._generate_id()
 
-        # Fill the student object attributes
-        self.student = {
-            "student_id": student_id,
-            "first_name": firstname,
-            "last_name": lastname,
-            "gender": gender,
-            "email": email,
-            "phone": phone,
-            "emergency_contact": emergency,
-            "educational_background": background,
-            "date_of_birth": dob,
-            "passport_photograph": passport
+        student = Student(
+            student_id=student_id,
+            first_name=firstname,
+            last_name=lastname,
+            gender=gender,
+            email=email,
+            phone=phone,
+            emergency_contact=emergency,
+            educational_background=background,
+            date_of_birth=dob,
+            passport_photograph=passport,
+        )
 
+        self.students.append(student)
+        return student
 
-        }
+    def get_student_by_id(self, student_id: str) -> Student | None:
+        """Find a student by their ID."""
+        for student in self.students:
+            if student.student_id == student_id:
+                return student
+        return None
 
-        # Save student to students list
-        self.students.append(self.student)
-        return self.student
+    def find_student(self, firstname: str, lastname: str, student_id: str = "") -> Student | None:
+        """Find a student by name and optionally by ID."""
+        for student in self.students:
+            name_match = (
+                student.first_name.lower() == firstname.lower()
+                and student.last_name.lower() == lastname.lower()
+            )
+            if student_id:
+                if name_match and student.student_id == student_id:
+                    return student
+            elif name_match:
+                return student
+        return None
 
-    # method for getting student id
-    def get_student_id(
-            self, 
-            firstname,
-            lastname
-        ):
-        """
-        search for student id and return it
-        """
-        id = ""
-        for i in range(self.students):
-            first_name = self.students[i].first_name
-            last_name = self.students[i].last_name
-            if first_name == firstname and last_name == lastname:
-                id = self.students[i].student_id
-                break
-        
-        return id
-    
-    def get_all_students(self):
+    def get_all_students(self) -> list[Student]:
+        """Return all registered students."""
         return self.students
-    
-    def generate_new_id(self):
-        """
-        Generate a new unique student ID
-        """
-        # student ids must start with "ST" concatenated to a generated random 4 digit number
-        # generate an integer from 0 to 9999
-        num = random.randint(0, 9999)
 
-        # format it to a string, padding with zeros if its less than 4 digits
-        id = f"ST{num:04d}"
-        # check if id has been used before
-        for student_id in self.students_id:
-            if student_id == id:
-                # if it has been used, generate a new one
-                return self.generate_new_id()
+    def update_student(self, student_id: str, **kwargs) -> Student | None:
+        """Update a student's profile fields. Returns the updated student or None."""
+        student = self.get_student_by_id(student_id)
+        if student is None:
+            return None
 
-        return id
-    
-    def find_student(
-            self,
-            firstname,
-            lastname,
-            student_id
-        ) -> bool:
-        """
-        Find a student by their first name, last name, and student ID
-        """
-        # seperate the name by whitespace to derive 
-        # the firstname and lastname since they are stored as fullname
-        name = self.students_id[id].split(" ")
-        first_name = name[0]
-        last_name = name[1]
+        for key, value in kwargs.items():
+            if hasattr(student, key):
+                setattr(student, key, value)
+        return student
 
-        # find the student id in the mapping of student_id -> fullname
-        for id in self.students_id:
-            if id == student_id and first_name == firstname and last_name == lastname:
-                return True
-            else:
-                return False
-            
-    def update_student(self, student_id, **kwargs):
-        """
-        Updates the student profile with new information
-        """
-        # New info could be anything, ranging from a changed address, phone number, email, etc.
-        # We will check against all the info provided by the user for changes and update the student profile accordingly
-        # First find the student by their ID
-        for student in self.students:
-            # Use dictionary key lookup
-            if student.get("student_id") == student_id:
+    def deactivate_student(self, student_id: str) -> bool:
+        """Mark a student as inactive (suspended) by ID."""
+        student = self.get_student_by_id(student_id)
+        if student:
+            student.status = "suspended"
+            return True
+        return False
 
-                # Now we will check for changes in the provided info
-                for key, value in kwargs.items():
-                    # Check if key exists in the typedict and update it
-                    if key in student:
-                        student[key] = value
-                break
+    def remove_student(self, student_id: str) -> bool:
+        """Permanently remove a student from the repository."""
+        student = self.get_student_by_id(student_id)
+        if student:
+            self.students.remove(student)
+            self._used_ids.discard(student_id)
+            return True
+        return False
 
-    # Some students may no longer be active in the system
-    # So remove them
-    def deactivate_student(self, name):
-        """
-        Find and delete inactive student
-        """
-        name_list = name.split(" ")
-        first_name = name_list[0]
-        last_name = name_list[1]
-        for student in self.students:
-            if student.last_name == last_name and student.first_name == first_name:
-                self.students.remove(student)
-                break
+    def _generate_id(self) -> str:
+        """Generate a unique student ID in the format ST####."""
+        while True:
+            num = random.randint(0, 9999)
+            candidate = f"ST{num:04d}"
+            if candidate not in self._used_ids:
+                self._used_ids.add(candidate)
+                return candidate

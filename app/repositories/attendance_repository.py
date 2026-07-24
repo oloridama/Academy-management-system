@@ -1,136 +1,124 @@
-# This script is for defining functions for the attendance model
-from app.models.attendance import Attendance
-from app.repositories.student_repository import StudentRepository
-from app.repositories.instructor_repository import InstructorRepository
-from app.models.date import Date
+"""Attendance data access layer."""
+from app.models.attendance import AttendanceRecord, BatchSessionAttendance
 
-
-# months is a constant with the names of the months as keys to access their number of days
-MONTHS = {
-    "january": 31,
-    "february": 28 or 29,
-    "march": 31,
-    "april": 30,
-    "may": 31,
-    "june": 30,
-    "july": 31,
-    "august": 31,
-    "september": 30,
-    "october": 31,
-    "november": 30,
-    "december": 31
-}
 
 class AttendanceRepository:
-    def __init__(
-            self, 
-            attendance: type[Attendance], 
-            day, 
-            month, 
-            year, 
-            session_days: int, 
-            breaks: list[Date], 
-            general_calender: list[Date]
-    ):
-        # Initialize school session days depending on region in __init__ constructor
-        self.valid_days = session_days
+    """Manages attendance records for students and instructors."""
 
-        # Take the school breaks list and remove the dates from the general calender
-        # to create the list of valid school dates
-        self.calender_list = general_calender
-        for break_date in breaks:
-            for date in self.calender_list:
-                if break_date == date:
-                    self.calender_list.remove(date)
+    # ── REFACTORING NOTES ──────────────────────────────────────────────
+    # 1. SIMPLIFIED CONSTRUCTOR — the original took 7 parameters
+    #    (attendance type, day, month, year, session_days, breaks,
+    #    general_calendar) and tried to build a full academic calendar
+    #    at init time. This conflated attendance recording with calendar
+    #    management. Now the repository is focused solely on storing and
+    #    querying attendance records.
+    #
+    # 2. REMOVED calendar/session logic — belongs in a separate utility
+    #    or service, not the data layer.
+    #
+    # 3. REMOVED dependency on StudentRepository/InstructorRepository —
+    #    the original instantiated both with no constructor args
+    #    (causing TypeError). The attendance repo should not own student
+    #    or instructor data.
+    #
+    # 4. REPLACED the complex nested dict structure with flat lists of
+    #    dataclass instances — easier to query, serialize, and maintain.
+    #
+    # 5. FIXED TYPO: `self.atttendance_list` → proper naming.
+    #
+    # 6. SEPARATED individual records from session summaries —
+    #    `AttendanceRecord` for per-person marks, `BatchSessionAttendance`
+    #    for per-session roll-ups.
+    # ───────────────────────────────────────────────────────────────────
 
-        #Instantiate student repository to get access to the students list
-        students = StudentRepository()
-        instructors = InstructorRepository()
-        self.date = Date(year=year, month=month, day=day)
+    def __init__(self):
+        self.records: list[AttendanceRecord] = []
+        self.sessions: list[BatchSessionAttendance] = []
 
-        students_list = students.students
-        instructor_list = instructors.tutors
+    def mark_attendance(
+        self,
+        first_name: str,
+        last_name: str,
+        date: str,
+        batch_id: str,
+        is_present: bool = True,
+        role: str = "student",
+    ) -> AttendanceRecord:
+        """Record a single attendance mark for one person on one date."""
+        record = AttendanceRecord(
+            first_name=first_name,
+            last_name=last_name,
+            date=date,
+            batch_id=batch_id,
+            is_present=is_present,
+            role=role,
+        )
+        self.records.append(record)
+        return record
 
-        self.attendance = attendance
-        self.attendance.days_absent = self.valid_days - self.attendance.days_present
-        self.instructors = instructor_list
-        self.students = students_list
+    def create_session_attendance(
+        self,
+        date: str,
+        batch_id: str,
+        lesson_topic: str = "",
+        present_student_ids: list[str] | None = None,
+        present_instructor_ids: list[str] | None = None,
+        total_enrolled: int = 0,
+    ) -> BatchSessionAttendance:
+        """Create a session-level attendance summary."""
+        session = BatchSessionAttendance(
+            date=date,
+            batch_id=batch_id,
+            lesson_topic=lesson_topic,
+            present_student_ids=present_student_ids if present_student_ids is not None else [],
+            present_instructor_ids=present_instructor_ids if present_instructor_ids is not None else [],
+            total_enrolled=total_enrolled,
+        )
+        self.sessions.append(session)
+        return session
 
-        #Attendance list should have a tutors session alongside a students session under a date
-        self.attendance_list: dict[Date, dict[str, dict[str, int]]] = {} # {"date": {"tutors": [{"name1": 0}, {"name2": 0}], "students": [{"name1": 0}, "name2": 0]}}
-        
-        # warm start up for the attendance list
-        self.attendance_list[self.date] = {
-            "tutor": {instructor: 0 for instructor in self.instructors},
-            "students": {student: 0 for student in self.students}
-        }
-    # Attendance has the names of students and academic(tutors) 
-    # Everyone checks in under the present day in the week
-    # Not checking in at the end of the day equals absent
-    def mark_person_attendance(
-            self,
-            role: str,
-            firstname: str,
-            lastname: str,
-        ):
-        """
-        Uses self.date to automatically find the right records
-        Role: 'students' or 'tutors'
-        """
-        # Find person in self.attendance_list which is a dict
-        if self.attendance_list[self.date][role] == "tutor":
-            # self.attendance_list[self.date]["tutor"] is a list of dict 
-            # That contains a dataclass object for each key
-            for individual in self.attendance_list[self.date]["tutor"]:
-                # individual is not a dict but a dataclass object
-                if individual.first_name == firstname and individual.last_name == lastname:
-                    self.atttendance_list[self.date]["tutor"][individual] += 1
-                    print("Attendance marked for today!")
-        for individual in self.attendance_list[self.date]["students"]:
-            if individual.first_name == firstname and individual.last_name == lastname:
-                self.attendance_list[self.date]["students"][individual] += 1
-                print("Attendance marked for today!")
+    def get_records_by_date(self, date: str) -> list[AttendanceRecord]:
+        """Get all attendance records for a specific date."""
+        return [r for r in self.records if r.date == date]
 
-        # Increase attendance number by 1
-        self.attendance.days_present += 1        
-        
+    def get_records_by_batch(self, batch_id: str) -> list[AttendanceRecord]:
+        """Get all attendance records for a specific batch."""
+        return [r for r in self.records if r.batch_id == batch_id]
 
-    def get_days_absent(self, firstname, lastname):
-        """
-        Uses and individual's name to check their attendance record
-        Absent days = Total number of school days - days present
-        """
-        absent_days = 0
-        if self.attendance.first_name == firstname and \
-            self.attendance.last_name == lastname:
-            absent_days = self.attendance.days_absent
+    def get_records_by_person(self, first_name: str, last_name: str) -> list[AttendanceRecord]:
+        """Get all attendance records for a specific person."""
+        return [
+            r for r in self.records
+            if r.first_name.lower() == first_name.lower()
+            and r.last_name.lower() == last_name.lower()
+        ]
 
-        return absent_days
-        
     def get_absent_dates(
-            self,
-            role,
-            firstname,
-            lastname,
-    ):
-        """
-        Uses an individual's name to check their attendance record for dates absent
-        """
-        # We can get this by initializing a school calender for valid dates in the constructor
-        # We check the dates that the student didn't mark attendance and return them in a list
-        calender = self.get_calender_year()
-        # loop through self.attendance list, for any name 0 = absent and 1 = present
-        absent_dates = []
-        for date in self.attendance_list:
-            if self.attendance_list[date][role] == "tutor":
-                for individual in self.attendance_list[date]["tutor"]:
-                    if self.attendance_list[date]["tutor"][individual] == 0:
-                        if individual.first_name == firstname and \
-                            individual.last_name == lastname:
-                            absent_dates.append(date)
+        self, first_name: str, last_name: str, batch_id: str = ""
+    ) -> list[str]:
+        """Get all dates a person was marked absent."""
+        records = self.get_records_by_person(first_name, last_name)
+        if batch_id:
+            records = [r for r in records if r.batch_id == batch_id]
+        return [r.date for r in records if not r.is_present]
 
-        return absent_dates
+    def get_days_absent(
+        self, first_name: str, last_name: str, batch_id: str = ""
+    ) -> int:
+        """Count the number of days a person was absent."""
+        return len(self.get_absent_dates(first_name, last_name, batch_id))
 
-    # Create a helper function for school calender,     
-    def get_calender_year(self):
-        return self.calender_list
+    def get_session_by_date(self, batch_id: str, date: str) -> BatchSessionAttendance | None:
+        """Get a session summary for a specific batch and date."""
+        for session in self.sessions:
+            if session.batch_id == batch_id and session.date == date:
+                return session
+        return None
+
+    def get_all_sessions(self) -> list[BatchSessionAttendance]:
+        """Return all session attendance summaries."""
+        return self.sessions
+
+    def get_all_records(self) -> list[AttendanceRecord]:
+        """Return all individual attendance records."""
+        return self.records

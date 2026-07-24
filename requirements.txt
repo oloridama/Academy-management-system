@@ -1,0 +1,6 @@
+# Academy Management System — Python dependencies
+# Core (no external dependencies required for the base system)
+# All models use only stdlib dataclasses
+
+# Optional: for image handling of student passport photographs
+Pillow>=10.0.0

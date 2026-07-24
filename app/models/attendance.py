@@ -1,32 +1,57 @@
-# attendance model
-from dataclasses import dataclass
-from app.models.date import Date
-from app.models.batch import Batch
+"""Attendance domain model."""
+from dataclasses import dataclass, field
 
+
+# ── REFACTORING NOTES ──────────────────────────────────────────────────
+# 1. RENAMED `Attendance` → `AttendanceRecord` — the original name
+#    conflicted with the module name (attendance.py) and was too generic.
+#    The new name clearly signals "one person's presence on one day."
+#
+# 2. FIXED FIELD ORDER — the original had a required `present_status:
+#    bool` AFTER optional fields with defaults. Dataclasses require all
+#    required fields to come before any field with a default.
+#
+# 3. CHANGED `date: Date` → `date: str` — removed dependency on the
+#    custom Date class. ISO strings are sortable, comparable, and
+#    universally supported.
+#
+# 4. RENAMED `BatchClassAttendance` → `BatchSessionAttendance` —
+#    "session" is the ubiquitous term from the project glossary, making
+#    the intent clearer.
+#
+# 5. REPLACED `__post_init__` with `@property` — computed fields
+#    (`students_present`, `students_absent`) are now dynamic properties
+#    that always stay in sync, rather than being calculated once at
+#    init time and becoming stale when lists change.
+#
+# 6. USED `field(default_factory=list)` — avoids the mutable-default
+#    antipattern that the original `= None` + assignment had.
+# ───────────────────────────────────────────────────────────────────────
 @dataclass
-class Attendance:
-    first_name: str # name could be student or academic staff
+class AttendanceRecord:
+    """A single attendance record for a student or instructor on a given date."""
+    first_name: str
     last_name: str
-    date: Date
-    batch_class: str = ""     # this is the batch class a student is suppose to attend or an academic staff is suppose to teach
-    present_status: bool  # true if present, false if absent
+    date: str  # ISO date string
+    batch_id: str = ""
+    is_present: bool = False
+    role: str = "student"  # student or instructor
+
 
 @dataclass
-class BatchClassAttendance:
-    """
-    This models the attendance of a batch class for a specific date.
-    """
-    date: Date
-    lesson: str = ""
-    names_of_students_present = list[str] = None  
-    number_of_students_present: int = 0
-    batch: Batch  
-    # students_absent should be calculated as the difference 
-    # between the batch capacity and the number of students present
-    # but initialize the field without a default math equation
-    students_absent: int = 0
+class BatchSessionAttendance:
+    """Attendance summary for a single class session within a batch."""
+    date: str
+    batch_id: str
+    lesson_topic: str = ""
+    present_student_ids: list[str] = field(default_factory=list)
+    present_instructor_ids: list[str] = field(default_factory=list)
+    total_enrolled: int = 0
 
-    # dynamically calculate the number of absent students
-    def __post_init__(self):
-        self.number_of_students_present = len(self.names_of_students_present)
-        self.students_absent = len(self.batch.enrolled_students) - self.number_of_students_present
+    @property
+    def students_present(self) -> int:
+        return len(self.present_student_ids)
+
+    @property
+    def students_absent(self) -> int:
+        return self.total_enrolled - len(self.present_student_ids)
